@@ -1,35 +1,6 @@
 # VidDL
 > A video/audio downloader and viewer for the people.
 
----
-
-```
-
-  (V)
-  | |____________________________________________________
-  | |                                                    \
-  | |                                                     \
-  | |      VVVVVVVV           VVVVVVVViiiiiii   dddddddd   |
-  | |      V::::::V           V::::::Vi:::::i   d::::::d   |        +--------------------+
-  | |      V::::::V           V::::::V i::::i   d::::::d   |        |  ________________  |
-  | |      V::::::V           V::::::V  i:::i   d::::::d   |        | |   |          |   | |
-  | |       V:::::V           V:::::V   i:::i   d:::::d    |        | | O |          | O | |
-  | |        V:::::V         V:::::V    i:::i   d:::::d    |        | |___|__________|___| |
-  | |         V:::::V       V:::::V     i:::i   d:::::d    |        |____________________|
-  | |          V:::::V     V:::::V      i:::i  d::::::d    |
-  | |           V:::::V   V:::::V       i:::i d:::::::d    |
-  | |            V:::::V V:::::V        i:::id::::::::d    |
-  | |             V:::::V:::::V         i:::id::::::::d    |
-  | |              V:::::::::V          i:::id::::::::d    |
-  | |               V:::::::V          i::::id:::::::d     |
-  | |                V:::::V          i::::::id::::::d     |
-  | |                 V:::V           i::::::id::::::d     |
-  | |                  VFV            iiiiiiiidddddddd     |
-  | |                                                      /
-  | |____________________________________________________/
-  |____________________________________________________|
-         (O)                               (O)
-
 ```
 
 VidDL is a desktop application built with Python that allows you to download video and audio from various websites. It features an embedded media player to watch your downloaded content, complete with an audio visualizer for music.
