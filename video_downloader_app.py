@@ -429,7 +429,7 @@ class VideoDownloaderApp(tk.Tk):
         
         self.configure(background=BG)
         self.visualizer_canvas.configure(bg=BG)
-        self.status_label.configure(foreground=ACCENT2)
+        self.status_label.configure(foreground='#05ffa1', background=BG) # Force high-contrast text and background
 
     def apply_cyberpunk_theme(self):
         """Apply a neon cyberpunk theme."""
@@ -464,7 +464,7 @@ class VideoDownloaderApp(tk.Tk):
         
         self.configure(background=BG)
         self.visualizer_canvas.configure(bg=BG)
-        self.status_label.configure(foreground=PINK)
+        self.status_label.configure(foreground=CYAN, background=BG) # Force high-contrast text and background
 
     def apply_hacker_theme(self):
         """Apply a matrix code hacker theme with modern accents."""
@@ -831,13 +831,18 @@ class VideoDownloaderApp(tk.Tk):
     def update_progress_ui(self, d: dict):
         """
         Updates the progress bar and status label based on yt-dlp progress data.
-        
-        Args:
-            d (dict): Progress data from yt-dlp.
         """
-        if d['status'] == 'downloading':
+        if not d:
+            return
+            
+        status = d.get('status')
+            
+        if status == 'downloading':
             try:
-                p = d.get('_percent_str', '0%').replace('%','')
+                p = str(d.get('_percent_str', '0%')).replace('%', '').replace('\x1b[0;94m', '').replace('\x1b[0m', '').strip()
+                if p == 'Unknown' or p == '~':
+                    p = '0'
+                    
                 progress_float = float(p)
                 
                 # Throttle UI updates to avoid lag
@@ -845,17 +850,19 @@ class VideoDownloaderApp(tk.Tk):
                 if current_time - self.last_progress_update_time > 0.1 or progress_float >= 100:
                     self.after(0, lambda pf=progress_float: self.progress_bar.config(value=pf))
                     
-                    speed = d.get('_speed_str', 'N/A')
-                    eta = d.get('_eta_str', 'N/A')
+                    speed = str(d.get('_speed_str', 'N/A')).replace('\x1b[0;32m', '').replace('\x1b[0m', '').strip()
+                    eta = str(d.get('_eta_str', 'N/A')).replace('\x1b[0;33m', '').replace('\x1b[0m', '').strip()
                     status_text = f"Downloading: {p}% at {speed} (ETA: {eta})"
                     self.after(0, lambda st=status_text: self.status_label.config(text=st))
                     
                     self.last_progress_update_time = current_time
             except Exception as e:
-                print(f"Progress update error: {e}")
-        elif d['status'] == 'finished':
-            self.after(0, lambda: self.status_label.config(text="Processing..."))
+                pass # Print skipped here to avoid spamming the terminal if parsing fails
+        elif status == 'finished':
+            self.after(0, lambda: self.status_label.config(text="Processing and Merging Audio/Video..."))
             self.after(0, lambda: self.progress_bar.config(value=100))
+        elif status == 'error':
+            self.after(0, lambda: self.status_label.config(text="Download encountered an error. Retrying..."))
 
     def get_checked_videos(self):
         checked_videos = []
