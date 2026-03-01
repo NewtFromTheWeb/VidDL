@@ -103,13 +103,16 @@ class VideoDownloaderApp(tk.Tk):
         """
         super().__init__()
 
-        self.title("Video Downloader")
-        self.geometry("900x800")
+        self.title("VidDL - Advanced Video Downloader")
+        self.geometry("1100x850")
+        self.minsize(1000, 750) # Prevents shrinking too much
         self.download_dir = None
         self.downloaded_file_path = None
         self.formats = []
         self.mp3_var = tk.BooleanVar()
-        self.vlc_instance = vlc.Instance("--file-caching=2000")
+        self.is_playlist = False
+        self.subtitle_var = tk.BooleanVar(value=False)
+        self.vlc_instance = vlc.Instance("--file-caching=3000 --network-caching=3000 --avcodec-hw=none --no-video-title-show")
         self.media_player = self.vlc_instance.media_player_new()
         self.is_playing = False
         self.is_paused = False
@@ -127,7 +130,10 @@ class VideoDownloaderApp(tk.Tk):
         self.is_playing_from_library = False
         self.seek_var = tk.DoubleVar()
         self.volume_var = tk.DoubleVar()
-        self.last_progress_update_time = 0
+        self.last_progress_update_time = 0.0
+        self.visualizer_update_job = None
+        self.beat_frames = None
+        self._play_media_called = False
 
         # --- Style ---
         self.style = ttk.Style(self)
@@ -175,8 +181,18 @@ class VideoDownloaderApp(tk.Tk):
         self.player_notebook = ttk.Notebook(top_pane)
         self.player_notebook.grid(row=0, column=0, sticky="nsew", padx=10, pady=10)
         
+        # Ensure notebook itself can expand
+        top_pane.grid_rowconfigure(0, weight=1)
+        top_pane.grid_columnconfigure(0, weight=1)
+
         self.video_frame = ttk.Frame(self.player_notebook)
+        self.video_frame.pack(fill="both", expand=True)
+        # Give video frame a minimum size to prevent shrinking to zero
+        self.video_frame.config(width=800, height=450)
+        
         self.visualizer_frame = ttk.Frame(self.player_notebook)
+        self.visualizer_frame.pack(fill="both", expand=True)
+        
         self.player_notebook.add(self.video_frame, text="Player")
         self.player_notebook.add(self.visualizer_frame, text="Audio Visualizer")
         self.player_notebook.bind("<<NotebookTabChanged>>", self.on_tab_changed)
@@ -235,18 +251,27 @@ class VideoDownloaderApp(tk.Tk):
         self.next_button = ttk.Button(player_controls_frame, text="Next >>", command=self.play_next)
         self.next_button.grid(row=0, column=2, padx=(0, 10))
 
+        # Shuffle and Repeat (using tk.Button for manual relief toggle)
+        self.shuffle_button = tk.Button(player_controls_frame, text="🔀", command=self.toggle_shuffle)
+        self.shuffle_button.grid(row=0, column=3, padx=5)
+        
+        self.repeat_button = tk.Button(player_controls_frame, text="🔁", command=self.toggle_repeat)
+        self.repeat_button.grid(row=0, column=4, padx=5)
+
         self.seek_slider = ttk.Scale(player_controls_frame, from_=0, to=1000000, orient="horizontal", variable=self.seek_var, command=None)
-        self.seek_slider.grid(row=0, column=3, sticky="ew", padx=5)
+        self.seek_slider.grid(row=0, column=5, sticky="ew", padx=5)
+        self.seek_slider.grid_rowconfigure(0, weight=1)
+        player_controls_frame.grid_columnconfigure(5, weight=1)
         self.seek_slider.bind("<ButtonPress-1>", self.on_seek_start)
         self.seek_slider.bind("<ButtonRelease-1>", self.on_seek_end)
         self.seek_slider.bind("<B1-Motion>", self.on_seek_motion)
 
         self.time_label = ttk.Label(player_controls_frame, text="00:00 / 00:00")
-        self.time_label.grid(row=0, column=4, padx=5)
+        self.time_label.grid(row=0, column=6, padx=5)
 
         self.volume_slider = ttk.Scale(player_controls_frame, from_=0, to=100, orient="horizontal", variable=self.volume_var, command=lambda v: self.set_volume())
         self.volume_var.set(100)
-        self.volume_slider.grid(row=0, column=5, padx=(5, 0))
+        self.volume_slider.grid(row=0, column=7, padx=(5, 0))
 
         # --- Row 2: Download Options ---
         download_options_frame = ttk.Frame(controls_frame)
@@ -259,19 +284,23 @@ class VideoDownloaderApp(tk.Tk):
         self.mp3_check = ttk.Checkbutton(download_options_frame, text="Download as MP3", variable=self.mp3_var, command=self.toggle_format_combo)
         self.mp3_check.grid(row=0, column=1, padx=5)
 
+        self.subtitle_check = ttk.Checkbutton(download_options_frame, text="Subtitles", variable=self.subtitle_var)
+        self.subtitle_check.grid(row=0, column=2, padx=5)
+
         self.log_toggle_check = ttk.Checkbutton(download_options_frame, text="Show Log", variable=self.log_viewer_visible, command=self.toggle_log_viewer)
-        self.log_toggle_check.grid(row=0, column=2, padx=5)
+        self.log_toggle_check.grid(row=0, column=3, padx=5)
 
         self.visualizer_style = tk.StringVar(value='Bar')
         self.visualizer_combo = ttk.Combobox(download_options_frame, textvariable=self.visualizer_style, state='readonly', width=15)
         self.visualizer_combo['values'] = ['Bar', 'Heartbeat', 'Spectrum', 'Oscilloscope', '3D']
         self.visualizer_combo.grid(row=0, column=4, padx=5)
 
-        self.theme_style = tk.StringVar(value=self.style.theme_use())
+        self.theme_style = tk.StringVar(value="Cyberpunk")
         self.theme_combo = ttk.Combobox(download_options_frame, textvariable=self.theme_style, state='readonly', width=15)
-        self.theme_combo['values'] = self.style.theme_names() + ('vaporwave',)
+        self.theme_combo['values'] = ['Cyberpunk', 'Hacker', 'Vaporwave', 'Modern Dark']
         self.theme_combo.grid(row=0, column=6, padx=5)
         self.theme_combo.bind('<<ComboboxSelected>>', self.change_theme)
+        self.after(500, self.change_theme) # Apply default theme after a short delay
 
         self.download_button = ttk.Button(download_options_frame, text="Download", command=self.download_video)
         self.download_button.grid(row=0, column=5, padx=5)
@@ -322,7 +351,10 @@ class VideoDownloaderApp(tk.Tk):
         print("Log viewer initialized.")
         self.log_frame.grid_remove()
 
-        self.downloader = Downloader(download_complete_callback=self.on_download_complete)
+        self.downloader = Downloader(
+            download_complete_callback=self.on_download_complete,
+            progress_callback=self.update_progress_ui
+        )
 
         try:
             self.media_player.set_hwnd(self.video_frame.winfo_id())
@@ -350,53 +382,152 @@ class VideoDownloaderApp(tk.Tk):
         """Change the application theme."""
         try:
             theme = self.theme_style.get()
-            if theme == "vaporwave":
+            if theme == "Vaporwave":
                 self.apply_vaporwave_theme()
+            elif theme == "Cyberpunk":
+                self.apply_cyberpunk_theme()
+            elif theme == "Hacker":
+                self.apply_hacker_theme()
+            elif theme == "Modern Dark":
+                self.apply_modern_dark_theme()
             else:
-                self.style.theme_use(theme)
+                self.style.theme_use('clam')
         except Exception as e:
             print(f"Error changing theme: {e}")
 
     def apply_vaporwave_theme(self):
-        """Apply a custom vaporwave theme."""
-        # Colors
-        BG_COLOR = '#0d0221'
-        FG_COLOR = '#f0f0f0'
-        ACCENT_COLOR_1 = '#ff00ff' # Magenta
-        ACCENT_COLOR_2 = '#00ffff' # Cyan
-        BTN_BG = '#261a3b'
-        BTN_FG = ACCENT_COLOR_2
+        """Apply a refined vaporwave theme with better readability."""
+        BG = '#1c0b2b'
+        FG = '#ff71ce'
+        ACCENT1 = '#01cdfe'
+        ACCENT2 = '#05ffa1'
+        SELECT_BG = '#833ab4' # Darker purple for selection
 
-        self.style.theme_use('clam') # Start with a base theme
+        self.style.theme_use('clam')
+        self.style.configure('.', background=BG, foreground=FG, fieldbackground='#2d1b3d', bordercolor=ACCENT1)
+        self.style.configure('TFrame', background=BG)
+        self.style.configure('TLabel', background=BG, foreground=FG)
+        self.style.configure('TCheckbutton', background=BG, foreground=FG)
+        self.style.configure('TLabelframe', background=BG, foreground=ACCENT1)
+        self.style.configure('TLabelframe.Label', background=BG, foreground=ACCENT1)
+        self.style.configure('TButton', background='#2d1b3d', foreground=ACCENT1, borderwidth=1)
+        # Fix the blue text being hard to read by using a brighter cyan/white on hover
+        self.style.map('TButton', background=[('active', ACCENT1)], foreground=[('active', '#ffffff')])
+        self.style.configure('Treeview', background='#2d1b3d', foreground=FG, fieldbackground='#2d1b3d')
+        self.style.map('Treeview', background=[('selected', SELECT_BG)], foreground=[('selected', '#ffffff')])
+        # Combo contrast
+        self.style.configure('TCombobox', fieldbackground='#2d1b3d', background='#2d1b3d', foreground=ACCENT1)
+        self.style.map('TCombobox', fieldbackground=[('readonly', '#2d1b3d')], foreground=[('readonly', ACCENT1)])
+        # Global popdown styling
+        self.option_add('*TCombobox*Listbox.background', '#2d1b3d')
+        self.option_add('*TCombobox*Listbox.foreground', ACCENT1)
+        self.option_add('*TCombobox*Listbox.selectBackground', SELECT_BG)
+        self.option_add('*TCombobox*Listbox.selectForeground', '#ffffff')
+        
+        # Treeview Headings
+        self.style.configure('Treeview.Heading', background='#2d1b3d', foreground=ACCENT1, font=('Helvetica', 10, 'bold'))
+        
+        self.configure(background=BG)
+        self.visualizer_canvas.configure(bg=BG)
+        self.status_label.configure(foreground=ACCENT2)
 
-        # General widget styling
-        self.style.configure('.', background=BG_COLOR, foreground=FG_COLOR, fieldbackground='#261a3b', bordercolor=ACCENT_COLOR_1)
-        self.style.map('.', background=[('active', '#3a2a5b')])
+    def apply_cyberpunk_theme(self):
+        """Apply a neon cyberpunk theme."""
+        BG = '#0a0a0a'
+        FG = '#f0f0f0'
+        YELLOW = '#f0db4f'
+        PINK = '#ff0055'
+        CYAN = '#00f6ff'
 
-        # Button styling
-        self.style.configure('TButton', background=BTN_BG, foreground=BTN_FG, borderwidth=1, focusthickness=3, focuscolor=ACCENT_COLOR_2)
-        self.style.map('TButton', background=[('active', ACCENT_COLOR_1)], foreground=[('active', BG_COLOR)])
+        self.style.theme_use('clam')
+        self.style.configure('.', background=BG, foreground=FG, fieldbackground='#1a1a1a', bordercolor=PINK)
+        self.style.configure('TFrame', background=BG)
+        self.style.configure('TLabel', background=BG, foreground=CYAN)
+        self.style.configure('TCheckbutton', background=BG, foreground=FG) # Set white foreground for readability
+        self.style.map('TCheckbutton', foreground=[('active', PINK), ('normal', FG)])
+        self.style.configure('TLabelframe', background=BG, foreground=YELLOW)
+        self.style.configure('TLabelframe.Label', background=BG, foreground=YELLOW, font=('Helvetica', 12, 'bold'))
+        self.style.configure('TButton', background='#1a1a1a', foreground=CYAN, borderwidth=1, bordercolor=CYAN)
+        self.style.map('TButton', background=[('active', PINK)], foreground=[('active', BG)])
+        self.style.configure('Treeview', background='#1a1a1a', foreground=FG, fieldbackground='#1a1a1a')
+        self.style.map('Treeview', background=[('selected', PINK)], foreground=[('selected', BG)])
+        self.style.configure('TCombobox', fieldbackground='#1a1a1a', background='#1a1a1a', foreground=CYAN)
+        self.style.map('TCombobox', fieldbackground=[('readonly', '#1a1a1a')], foreground=[('readonly', CYAN)])
+        # Global popdown styling
+        self.option_add('*TCombobox*Listbox.background', '#1a1a1a')
+        self.option_add('*TCombobox*Listbox.foreground', CYAN)
+        self.option_add('*TCombobox*Listbox.selectBackground', PINK)
+        self.option_add('*TCombobox*Listbox.selectForeground', BG)
+        
+        # Treeview Headings
+        self.style.configure('Treeview.Heading', background='#1a1a1a', foreground=CYAN, font=('Helvetica', 10, 'bold'))
+        
+        self.configure(background=BG)
+        self.visualizer_canvas.configure(bg=BG)
+        self.status_label.configure(foreground=PINK)
 
-        # Combobox styling
-        self.style.configure('TCombobox', selectbackground=ACCENT_COLOR_1, fieldbackground=BTN_BG, background=BTN_BG, foreground=FG_COLOR)
-        self.option_add('*TCombobox*Listbox.background', BTN_BG)
-        self.option_add('*TCombobox*Listbox.foreground', FG_COLOR)
-        self.option_add('*TCombobox*Listbox.selectBackground', ACCENT_COLOR_1)
-        self.option_add('*TCombobox*Listbox.selectForeground', BG_COLOR)
+    def apply_hacker_theme(self):
+        """Apply a matrix code hacker theme with modern accents."""
+        BG = '#000000'
+        FG = '#00ff41'
+        ACCENT = '#008f11'
+        HIGHLIGHT = '#ffffff'
 
-        # Treeview styling
-        self.style.configure('Treeview', background=BTN_BG, foreground=FG_COLOR, fieldbackground=BTN_BG)
-        self.style.map('Treeview', background=[('selected', ACCENT_COLOR_1)])
+        self.style.theme_use('clam')
+        self.style.configure('.', background=BG, foreground=FG, fieldbackground='#000a00', bordercolor=ACCENT)
+        self.style.configure('TFrame', background=BG)
+        self.style.configure('TLabel', background=BG, foreground=FG)
+        self.style.configure('TCheckbutton', background=BG, foreground=FG)
+        self.style.map('TCheckbutton', foreground=[('active', HIGHLIGHT), ('normal', FG)])
+        self.style.configure('TLabelframe', background=BG, foreground=FG)
+        self.style.configure('TLabelframe.Label', background=BG, foreground=FG, font=('Courier', 12, 'bold'))
+        self.style.configure('TButton', background='#0a2a0a', foreground=FG, borderwidth=1)
+        self.style.map('TButton', background=[('active', FG)], foreground=[('active', BG)])
+        self.style.configure('Treeview', background='#000a00', foreground=FG, fieldbackground='#000a00', font=('Courier', 10))
+        self.style.map('Treeview', background=[('selected', ACCENT)], foreground=[('selected', HIGHLIGHT)])
+        self.style.configure('TCombobox', fieldbackground='#000a00', background='#000a00', foreground=FG)
+        self.style.map('TCombobox', fieldbackground=[('readonly', '#000a00')], foreground=[('readonly', FG)])
+        # Global popdown styling
+        self.option_add('*TCombobox*Listbox.background', '#000a00')
+        self.option_add('*TCombobox*Listbox.foreground', FG)
+        self.option_add('*TCombobox*Listbox.selectBackground', ACCENT)
+        self.option_add('*TCombobox*Listbox.selectForeground', HIGHLIGHT)
 
-        # Progress bar styling
-        self.style.configure('Horizontal.TProgressbar', background=ACCENT_COLOR_2, troughcolor=BTN_BG, bordercolor=ACCENT_COLOR_1, lightcolor=ACCENT_COLOR_2, darkcolor=ACCENT_COLOR_2)
+        # Treeview Headings
+        self.style.configure('Treeview.Heading', background='#000a00', foreground=FG, font=('Courier', 10, 'bold'))
+        self.configure(background=BG)
+        self.visualizer_canvas.configure(bg=BG)
+        self.status_label.configure(foreground="#32cd32")
 
-        # Scale styling
-        self.style.configure('Horizontal.TScale', background=BG_COLOR, troughcolor=BTN_BG, sliderrelief='flat', sliderlength=20)
-        self.style.map('Horizontal.TScale', background=[('active', BG_COLOR)], troughcolor=[('active', BTN_BG)])
+    def apply_modern_dark_theme(self):
+        """Apply a standard modern dark professional theme."""
+        BG = '#1e1e1e'
+        FG = '#ffffff'
+        ACCENT = '#007acc'
 
-        # Apply to root window
-        self.configure(background=BG_COLOR)
+        self.style.theme_use('clam')
+        self.style.configure('.', background=BG, foreground=FG, fieldbackground='#2d2d2d', bordercolor=ACCENT)
+        self.style.configure('TFrame', background=BG)
+        self.style.configure('TLabel', background=BG, foreground=FG)
+        self.style.configure('TLabelframe', background=BG, foreground=ACCENT)
+        self.style.configure('TLabelframe.Label', background=BG, foreground=ACCENT)
+        self.style.configure('TButton', background=ACCENT, foreground=FG)
+        self.style.map('TButton', background=[('active', '#005a9e')])
+        self.style.configure('Treeview', background='#2d2d2d', foreground=FG, fieldbackground='#2d2d2d')
+        self.style.map('Treeview', background=[('selected', ACCENT)])
+        self.style.configure('TCombobox', fieldbackground='#2d2d2d', background='#3d3d3d', foreground=FG)
+        self.style.map('TCombobox', fieldbackground=[('readonly', '#2d2d2d')], foreground=[('readonly', FG)])
+        # Global popdown styling
+        self.option_add('*TCombobox*Listbox.background', '#2d2d2d')
+        self.option_add('*TCombobox*Listbox.foreground', FG)
+        self.option_add('*TCombobox*Listbox.selectBackground', ACCENT)
+        self.option_add('*TCombobox*Listbox.selectForeground', '#ffffff')
+
+        # Treeview Headings
+        self.style.configure('Treeview.Heading', background='#2d2d2d', foreground=ACCENT, font=('Helvetica', 10, 'bold'))
+        
+        self.configure(background=BG)
+        self.visualizer_canvas.configure(bg=BG)
 
     def fetch_url_info(self):
         url = self.url_entry.get()
@@ -416,60 +547,60 @@ class VideoDownloaderApp(tk.Tk):
         thread.start()
 
     def fetch_url_info_thread(self, url):
-        print("Fetching URL info thread started.")
+        """Fetch metadata for a URL using the yt-dlp Python API."""
+        print(f"Fetching URL info thread started for: {url}")
+        self.after(0, lambda: self.status_label.config(text="Fetching remote information..."))
+        
         try:
-            is_channel = "youtube.com/@" in url
-            command = [
-                'yt-dlp',
-                '--quiet',
-                '--dump-single-json',
-                '--no-warnings',
-            ]
-            if is_channel:
-                command.append('--flat-playlist')
+            ydl_opts = {
+                'quiet': True,
+                'no_warnings': True,
+                'extract_flat': 'in_playlist',
+                'ffmpeg_location': os.path.join(os.getcwd(), "ffmpeg.exe"),
+            }
             
-            command.append(url)
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(url, download=False)
+                
+            if not info:
+                raise Exception("Could not extract information.")
 
-            print("Running yt-dlp command...")
-            process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding='utf-8')
-
-            entries = []
-            with open("yt-dlp-output.log", "w", encoding="utf-8") as f:
-                for line in process.stdout:
-                    f.write(line)
-                    try:
-                        entry = json.loads(line)
-                        entries.append(entry)
-                    except json.JSONDecodeError:
-                        # Ignore lines that are not valid JSON
-                        pass
-            
-            print(f"Found {len(entries)} entries.")
-
-            if is_channel:
-                print("Processing as channel...")
-                info = {'entries': entries}
-                self.after(0, self.process_channel_info, info)
+            # Process based on type
+            if info.get('_type') in ['playlist', 'multi_video'] or 'entries' in info:
+                print(f"Processing as collection/channel (type: {info.get('_type', 'entries')})...")
+                self.after(0, self.update_metadata, info)
+                
+                self.is_playlist = True
+                new_entries = info.get('entries', [])
+                
+                # If this is a fresh fetch (not expanding), reset list
+                # Use a flag if we are expanding? For now, if we are in this thread, we replace.
+                self.playlist_videos = []
+                for entry in new_entries:
+                    if entry:
+                        self.playlist_videos.append(entry)
+                
+                print(f"Found {len(self.playlist_videos)} entries.")
+                self.after(0, self.populate_playlist_view)
+                
+                # If there's a first video and it's NOT a sub-playlist, prepare preview
+                if self.playlist_videos:
+                    first = self.playlist_videos[0]
+                    if first.get('_type') != 'playlist' and first.get('ie_key') != 'YoutubeTab':
+                        self.after(0, lambda: self.prepare_preview(first))
             else:
-                if entries:
-                    info = entries[0]
-                    if 'entries' in info: # It's a playlist
-                        print("Processing as playlist...")
-                        self.after(0, self.update_metadata, info)
-                        self.is_playlist = True
-                        self.playlist_videos = [video for video in info.get('entries', []) if video]
-                        self.after(0, self.populate_playlist_view)
-                    else: # It's a single video
-                        print("Processing as single video...")
-                        self.after(0, self.update_metadata, info)
-                        self.is_playlist = False
-                        self.playlist_videos = [info]
-                        self.after(0, self.populate_playlist_view)
+                # Single video
+                print("Processing as single video...")
+                self.after(0, self.update_metadata, info)
+                self.is_playlist = False
+                self.playlist_videos = [info]
+                self.after(0, self.populate_playlist_view)
+                self.after(0, lambda: self.prepare_preview(info))
 
         except Exception as e:
             error_msg = f"Error: {str(e)}"
             self.after(0, lambda: self.status_label.config(text=error_msg))
-            print(f"Full error: {e}")
+            print(f"Fetch info error: {e}")
         finally:
             print("Fetching URL info thread finished.")
             self.after(0, lambda: self.fetch_button.config(state="normal"))
@@ -529,21 +660,29 @@ class VideoDownloaderApp(tk.Tk):
             print(f"Error fetching playlist videos: {e}")
 
     def add_video_to_playlist_tree(self, playlist_node, video_info):
+        if not video_info or not isinstance(video_info, dict):
+            return
         video_index = len(self.playlist_videos)
         self.playlist_videos.append(video_info)
-        self.playlist_tree.insert(playlist_node, "end", text=video_info['title'], values=[video_index])
+        title = video_info.get('title', 'Untitled Video')
+        self.playlist_tree.insert(playlist_node, "end", text=title, values=[video_index])
 
 
 
     def populate_playlist_view(self):
         self.playlist_frame.grid()
+        self.playlist_tree.delete(*self.playlist_tree.get_children())
         for i, video in enumerate(self.playlist_videos):
-            title = video.get('title', 'N/A')
-            self.playlist_tree.insert("", "end", iid=i, text=title, values=[i])
+            title = video.get('title', video.get('playlist_title', 'N/A'))
+            # Distinguish between video and playlist/tab
+            is_collection = video.get('_type') == 'playlist' or video.get('ie_key') == 'YoutubeTab'
+            display_title = f"📁 {title}" if is_collection else title
+            
+            self.playlist_tree.insert("", "end", iid=i, text=display_title, values=[i])
         
         if self.is_playlist:
-            self.format_combo.config(state='disabled')
-            self.status_label.config(text=f"Playlist found with {len(self.playlist_videos)} items. Select videos to download.")
+            # self.format_combo.config(state='disabled') # Keep enabled so user can set batch format
+            self.status_label.config(text=f"Loaded {len(self.playlist_videos)} items. Click folders to expand.")
         else:
             self.format_combo.config(state='readonly')
             self.status_label.config(text="Single video info loaded.")
@@ -562,10 +701,26 @@ class VideoDownloaderApp(tk.Tk):
         if not values:
             return
 
-        video_index = int(values[0])
-        if video_index < len(self.playlist_videos):
-            video_info = self.playlist_videos[video_index]
-            self.update_metadata(video_info)
+        try:
+            video_index = int(values[0])
+            if video_index < len(self.playlist_videos):
+                video_info = self.playlist_videos[video_index]
+                
+                # Check if it's a playlist/tab that needs expansion
+                is_collection = video_info.get('_type') == 'playlist' or video_info.get('ie_key') == 'YoutubeTab'
+                
+                if is_collection:
+                    url = video_info.get('url') or video_info.get('webpage_url')
+                    if url:
+                        self.status_label.config(text=f"Expanding {video_info.get('title')}...")
+                        thread = threading.Thread(target=self.fetch_url_info_thread, args=(url,))
+                        thread.start()
+                else:
+                    self.update_metadata(video_info)
+                    # Preview selection
+                    self.after(0, lambda: self.prepare_preview(video_info))
+        except Exception as e:
+            print(f"Playlist select error: {e}")
 
     def update_format_combo(self):
         """Helper method to update format combo for single videos"""
@@ -587,18 +742,35 @@ class VideoDownloaderApp(tk.Tk):
 
     def extract_formats(self, info):
         formats = []
+        seen_resolutions = set()
+        
+        # Add a "Best Quality" option
+        formats.append({
+            'format_id': 'bestvideo+bestaudio/best',
+            'ext': 'mp4',
+            'text': 'Best Available Quality (Auto)'
+        })
+
         for f in info.get('formats', []):
-            if f.get('vcodec') != 'none' and f.get('acodec') != 'none':
-                format_text = f"{f.get('ext')} - {f.get('height', 'N/A')}p"
-                if f.get('fps'):
-                    format_text += f" @ {f.get('fps')}fps"
-                if f.get('filesize'):
-                    format_text += f" ({f.get('filesize') / 1024 / 1024:.2f} MB)"
-                formats.append({
-                    'format_id': f.get('format_id'),
-                    'ext': f.get('ext'),
-                    'text': format_text
-                })
+            # Include formats with video
+            if f.get('vcodec') != 'none':
+                height = f.get('height')
+                if height:
+                    res_key = f"{height}p"
+                    if res_key not in seen_resolutions:
+                        format_text = f"{f.get('ext', 'mp4')} - {res_key}"
+                        if f.get('fps'):
+                            format_text += f" @ {f.get('fps')}fps"
+                        
+                        formats.append({
+                            'format_id': f.get('format_id') if f.get('acodec') != 'none' else f"{f['format_id']}+bestaudio/best",
+                            'ext': f.get('ext', 'mp4'),
+                            'text': format_text
+                        })
+                        seen_resolutions.add(res_key)
+        
+        # Sort by resolution descending
+        formats.sort(key=lambda x: int(x['text'].split('-')[1].split('p')[0]) if 'p' in x['text'] and '-' in x['text'] else 0, reverse=True)
         return formats
 
     def update_metadata(self, info):
@@ -649,10 +821,41 @@ class VideoDownloaderApp(tk.Tk):
             self.add_to_library_tree("", directory)
 
     def on_download_complete(self):
+        """Called when all downloads in the current batch are finished."""
         self.after(0, lambda: self.status_label.config(text="All downloads complete."))
         self.after(0, self.populate_library)
         self.after(0, lambda: self.download_button.config(state="normal"))
         self.after(0, lambda: self.fetch_button.config(state="normal"))
+        self.after(0, lambda: self.progress_bar.config(value=0))
+
+    def update_progress_ui(self, d: dict):
+        """
+        Updates the progress bar and status label based on yt-dlp progress data.
+        
+        Args:
+            d (dict): Progress data from yt-dlp.
+        """
+        if d['status'] == 'downloading':
+            try:
+                p = d.get('_percent_str', '0%').replace('%','')
+                progress_float = float(p)
+                
+                # Throttle UI updates to avoid lag
+                current_time = time.time()
+                if current_time - self.last_progress_update_time > 0.1 or progress_float >= 100:
+                    self.after(0, lambda pf=progress_float: self.progress_bar.config(value=pf))
+                    
+                    speed = d.get('_speed_str', 'N/A')
+                    eta = d.get('_eta_str', 'N/A')
+                    status_text = f"Downloading: {p}% at {speed} (ETA: {eta})"
+                    self.after(0, lambda st=status_text: self.status_label.config(text=st))
+                    
+                    self.last_progress_update_time = current_time
+            except Exception as e:
+                print(f"Progress update error: {e}")
+        elif d['status'] == 'finished':
+            self.after(0, lambda: self.status_label.config(text="Processing..."))
+            self.after(0, lambda: self.progress_bar.config(value=100))
 
     def get_checked_videos(self):
         checked_videos = []
@@ -691,38 +894,75 @@ class VideoDownloaderApp(tk.Tk):
             return
         
         self.status_label.config(text="Downloading in background...")
-        self.downloader.download(videos_to_download, self.download_dir, self.mp3_var.get(), self.is_playlist)
+        
+        # Get selected format ID
+        format_id = None
+        selected_format_text = self.format_combo.get()
+        for f in self.formats:
+            if f['text'] == selected_format_text:
+                format_id = f['format_id']
+                break
+        
+        self.downloader.download(
+            videos_to_download, 
+            self.download_dir, 
+            self.mp3_var.get(), 
+            self.is_playlist,
+            format_id=format_id,
+            write_subs=self.subtitle_var.get()
+        )
 
 
 
 
-    def play_media(self):
+    def prepare_preview(self, info):
+        """Prepare the player to stream the video directly."""
+        url = info.get('url') # This is the direct media URL from yt-dlp
+        if url:
+            self.downloaded_file_path = url
+            self.play_media(is_stream=True)
+
+    def play_media(self, is_stream=False):
         # Stop any currently running visualizer loop
         if self.visualizer_update_job:
             self.after_cancel(self.visualizer_update_job)
             self.visualizer_update_job = None
 
-        if self.downloaded_file_path and os.path.exists(self.downloaded_file_path):
+        if self.downloaded_file_path:
             self.is_visualizing = False # Reset visualizer flag
-            media = self.vlc_instance.media_new(self.downloaded_file_path)
+            
+            # Apply volume immediately
+            self.after(100, self.set_volume)
+            
+            # Use specific options for streaming vs local file
+            if is_stream:
+                media = self.vlc_instance.media_new(self.downloaded_file_path)
+                self.status_label.config(text="Streaming preview...")
+            else:
+                if not os.path.exists(self.downloaded_file_path):
+                    self.status_label.config(text="Error: Local file not found.")
+                    return
+                media = self.vlc_instance.media_new(self.downloaded_file_path)
+
             self.media_player.set_media(media)
             
-            # Always load audio data for potential visualization
-            thread = threading.Thread(target=self.load_audio_data)
-            thread.start()
+            if not is_stream:
+                # Only load audio data for visualization for local files (librosa doesn't love URLs)
+                thread = threading.Thread(target=self.load_audio_data)
+                thread.start()
 
-            if self.mp3_var.get():
+            if self.mp3_var.get() and not is_stream:
                 self.player_notebook.select(self.visualizer_frame)
                 self.update_visualizer_ui() 
             else:
                 self.player_notebook.select(self.video_frame)
 
             self.media_player.play()
-            self.after(100, self.setup_seek_slider) # Wait a bit for media to load
+            self.after(200, self.setup_seek_slider) 
             self.play_pause_button.config(text="❚❚ Pause")
             self.is_paused = False
         else:
-            self.status_label.config(text="Error: Downloaded file not found.")
+            self.status_label.config(text="Error: No media path provided.")
 
     def on_tab_changed(self, event):
         selected_tab = self.player_notebook.tab(self.player_notebook.select(), "text")
@@ -1164,30 +1404,22 @@ class VideoDownloaderApp(tk.Tk):
             print(f"Volume error: {e}")
 
     def debug_controls(self):
-        """Helper method to debug control values"""
+        """Helper method to debug control values and player state."""
         print(f"Seek slider value: {self.seek_slider.get()}")
         print(f"Seek slider max: {self.seek_slider.cget('to')}")
         print(f"Volume slider value: {self.volume_slider.get()}")
-        print(f"Media position: {self.media_player.get_time()}")
-        print(f"Media length: {self.media_player.get_length()}")
-        print(f"Media volume: {self.media_player.audio_get_volume()}")
-
+        if self.media_player.get_media():
+            print(f"Media position: {self.media_player.get_time()} ms")
+            print(f"Media length: {self.media_player.get_length()} ms")
+            print(f"Media volume: {self.media_player.audio_get_volume()}")
+        else:
+            print("No media loaded.")
 
     def update_visualizer_ui(self):
         """Fast update loop for the audio visualizer animation."""
         if self.is_visualizing:
             self.visualize_audio()
         self.visualizer_update_job = self.after(40, self.update_visualizer_ui)
-
-
-    def debug_controls(self):
-        """Helper method to debug control values"""
-        print(f"Seek slider value: {self.seek_slider.get()}")
-        print(f"Seek slider max: {self.seek_slider.cget('to')}")
-        print(f"Volume slider value: {self.volume_slider.get()}")
-        print(f"Media position: {self.media_player.get_time()}")
-        print(f"Media length: {self.media_player.get_length()}")
-        print(f"Media volume: {self.media_player.audio_get_volume()}")
 
 
     def validate_ffmpeg(self):

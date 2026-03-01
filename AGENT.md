@@ -1,324 +1,79 @@
-# VidDL - AI Agent Instructions
-
-> **Note**: This file follows the AGENTS.md standard supported by Claude Code, GitHub Copilot, Cursor, and 20+ other AI coding tools.
-
-## 📋 Quick Reference
-- **Main file**: `video_downloader_app.py`
-- **Tech stack**: Python 3 + Tkinter + yt-dlp + VLC + librosa
-- **Dependencies**: See `requirements.txt` (if it exists) or inline imports
-- **Critical resources**: `ffmpeg.exe` must be in project root
-- **Detailed guidance**: See `@ARCHITECTURE.md`, `@BUGS_AND_SOLUTIONS.md`, `@CODE_EXAMPLES.md`
-
----
+# VidDL - Developer & AI Agent Guide
 
 ## 🎯 Project Overview
+**VidDL** is a feature-rich desktop media downloader and player.
+- **Core Strategy**: High-performance downloads via `yt-dlp` Python API + Resilient VLC playback.
+- **Visuals**: Modern neon-themed GUI (Cyberpunk, Hacker, Vaporwave) with real-time audio visualizations.
+- **Target**: Universal compatibility (MP4/MP3) with advanced metadata preview.
 
-**VidDL** is a desktop video/audio downloader with embedded playback for personal use. It downloads from YouTube, TikTok, Reddit, and any site supported by yt-dlp, then plays content in an integrated VLC player with audio visualizations.
+## 🏗️ Technical Architecture
+### 1. GUI Layer (`video_downloader_app.py`)
+- **Framework**: Tkinter (standard) + `ttk` for styling.
+- **Concurrency**: All blocking operations (fetching info, downloading) MUST run in daemon threads.
+- **Thread Safety**: Never update the GUI directly from a thread. Use `self.after(0, callback)`.
+- **Scaling**: Window is resizable with a minimum size of `1000x850` to prevent layout collapse.
 
-**Core capabilities**:
-- Download video (MP4) or audio (MP3) from any URL
-- Playlist/channel batch downloads with checkboxes
-- Embedded VLC media player with seek/pause/volume
-- Multiple audio visualizer modes (bar, spectrum, oscilloscope, 3D, heartbeat)
-- Local media library browser
-- Real-time download progress with threading
+### 2. Core Engine (`core/downloader.py`)
+- **Library**: `yt-dlp` (Python API).
+- **Format Selection**: Supports specific format IDs (passed from GUI) or fallback to `bestvideo+bestaudio`.
+- **Resilience**: Configured with 20 retries and 30s socket timeouts to prevent stalling.
+- **Sanitization**: All filenames are passed through `utils/sanitize.py` to prevent OS-level write errors.
 
-**Current architecture**: Single-file monolithic (900+ lines). See `@ARCHITECTURE.md` for recommended refactoring.
+### 3. Media Player & Visualizer
+- **VLC Integration**: Uses `python-vlc`. Polling pattern (100ms) updates the seek bar.
+- **Audio Processing**: `librosa` and `numpy` analyze local files for visualization. 
+- **Streaming**: Previews use the direct URL from `yt-dlp` to avoid local disk writes before download.
 
 ---
 
-## 🏗️ Project Structure
+## 🛠️ Maintenance Checklist
 
-```
-videopull/
-├── video_downloader_app.py    # Main application (all code)
-├── ffmpeg.exe                  # Required for format conversion
-├── AGENT.md                    # This file
-├── GEMINI.md                   # Gemini CLI specific instructions
-├── ARCHITECTURE.md             # Detailed patterns and structure
-├── BUGS_AND_SOLUTIONS.md       # Known issues with fixes
-├── CODE_EXAMPLES.md            # Good/bad patterns reference
-└── CODE_REVIEW_NOTES.md        # Original code review findings
-```
+### Performance & Stability
+- [ ] **Avoid Blocking**: Ensure `yt-dlp` calls are never on the main thread.
+- [ ] **VLC Cleanup**: Always `release()` the VLC instance in `on_closing`.
+- [ ] **ffmpeg.exe**: Must exist in the project root for merging/conversion.
 
-**Recommended refactoring** (see `@ARCHITECTURE.md`):
+### Theme & UI (Contrast Rules)
+- [ ] **Checkbutton Contrast**: Ensure `TCheckbutton` foreground is bright on neon backgrounds.
+- [ ] **Button States**: `active` background must be distinct from `normal` background.
+- [ ] **Focus Management**: `Combobox` must be readable when focused.
+
+### Download Features
+- [ ] **Format Mapping**: Ensure resolution strings (e.g., "1080p") map correctly to format IDs.
+- [ ] **Subtitles**: Toggle `--write-subs` and `--all-subs` based on user preference.
+- [ ] **Retry Logic**: Keep `retries` high for unreliable network environments.
+
+---
+
+## 📂 Project Structure
 ```
-video_downloader/
+VidDL/
 ├── core/
-│   ├── downloader.py      # yt-dlp wrapper with threading
-│   ├── queue_manager.py   # Download queue management
-│   └── player.py          # VLC wrapper with polling
-├── gui/
-│   ├── main_window.py     # Main Tkinter window
-│   └── widgets/           # Custom widgets
-└── utils/
-    ├── sanitize.py        # Filename sanitization
-    └── validators.py      # Input validation
+│   └── downloader.py      # Main yt-dlp wrapper (Resilience + Formats)
+├── utils/
+│   ├── sanitize.py        # Filename & OS path protector
+│   └── __init__.py        # Package marker
+├── ffmpeg.exe             # Required binary (do not delete)
+├── video_downloader_app.py # Main GUI & Player Logic
+├── requirements.txt       # Dependency list
+├── README.md              # User documentation
+└── AGENT.md               # This guide (Master Reference)
 ```
 
----
-
-## 🔧 Environment Setup
-
-### Required Dependencies
-```bash
-pip install yt-dlp python-vlc Pillow librosa numpy
-```
-
-### System Requirements
-- **VLC Media Player**: Must be installed on system
-- **ffmpeg.exe**: Must be in project root directory
-- **Python 3.7+**: Required for f-strings and type hints
-
-### Run Application
-```bash
-python video_downloader_app.py
-```
-
----
-
-## 📝 Development Workflow
-
-### Code Quality (File-scoped)
-```bash
-# Format code (when you create formatting tools)
-black video_downloader_app.py
-
-# Lint code (when you add linting)
-ruff check video_downloader_app.py
-
-# Type check (when you add type hints)
-mypy video_downloader_app.py
-```
-
-### Testing Strategy
-**Current state**: No automated tests
-**Recommended**: See `@ARCHITECTURE.md` for testing patterns
-
-### Version Control
-```bash
-# Before committing
-git status
-git add <files>
-git commit -m "feat: descriptive message"
-git push origin master
-```
-
----
-
-## 🎨 Coding Conventions
-
-### Style Guide
-- **PEP 8 compliant**: Standard Python style
-- **Line length**: 100 characters (current code uses 100+, acceptable for Tkinter)
-- **Indentation**: 4 spaces
-- **Naming**:
-  - Classes: `PascalCase` (e.g., `VideoDownloaderApp`)
-  - Methods/functions: `snake_case` (e.g., `fetch_url_info`)
-  - Constants: `UPPER_SNAKE_CASE` (e.g., `MAX_DOWNLOAD_THREADS`)
-  - Private methods: `_leading_underscore` (e.g., `_download_worker`)
-
-### Tkinter-Specific Patterns
-- **Always use daemon threads**: `threading.Thread(..., daemon=True)`
-- **GUI updates from threads**: Use `self.after(0, lambda: self.widget.config(...))`
-- **Never block main thread**: All yt-dlp operations in separate threads
-- **Use ttk widgets**: Prefer `ttk.Button` over `tk.Button` for modern look
-
-### Threading Safety Rules
+## 📜 Coding Patterns
+### GUI Update Pattern
 ```python
-# ✅ CORRECT: Update GUI from thread safely
-def download_thread(self):
-    data = download_video()
-    self.after(0, lambda: self.status_label.config(text="Done"))
-
-# ❌ WRONG: Direct GUI update from thread
-def download_thread(self):
-    data = download_video()
-    self.status_label.config(text="Done")  # WILL CRASH!
-```
-
-### Error Handling
-- **Always catch exceptions**: Especially in threads
-- **User-friendly messages**: Show errors in GUI, details in log
-- **Resource cleanup**: Use try/finally for VLC and threads
-
-**See `@CODE_EXAMPLES.md` for complete good/bad patterns**
-
----
-
-## 🐛 Known Issues & Solutions
-
-**Critical bugs** (see `@BUGS_AND_SOLUTIONS.md` for details):
-
-1. **Seek bar acts as volume control** (HIGH PRIORITY)
-   - Root cause: Event binding conflict between seek and volume sliders
-   - Solution: Use VLC polling pattern instead of event callbacks
-
-2. **Missing attribute `is_playing_from_library`** (HIGH PRIORITY)
-   - Root cause: Not initialized in `__init__`
-   - Solution: Add `self.is_playing_from_library = False` in `__init__`
-
-3. **Filename sanitization missing** (MEDIUM PRIORITY)
-   - Root cause: Special characters in titles cause filesystem errors
-   - Solution: Implement unicode normalization + character replacement
-
-4. **No resource cleanup on exit** (MEDIUM PRIORITY)
-   - Root cause: VLC and threads persist after window close
-   - Solution: Add `on_closing()` method with cleanup
-
-**See `@BUGS_AND_SOLUTIONS.md` for complete bug list with code solutions**
-
----
-
-## 🔒 Permission Boundaries
-
-### Safe Operations (No Approval Needed)
-✅ Read any project file
-✅ Run the application for testing
-✅ Modify `video_downloader_app.py` to fix bugs
-✅ Create new `.md` documentation files
-✅ Add comments and docstrings
-✅ Print debug information
-✅ Create new Python files for refactoring
-
-### Requires Explicit Approval
-❌ Delete any files
-❌ Modify `ffmpeg.exe` or binary files
-❌ Install new system dependencies
-❌ Run system commands beyond Python
-❌ Make breaking API changes
-❌ Modify `.git` directory
-❌ Change project structure drastically without discussion
-
-### Internet Operations
-⚠️ **Web searches**: Allowed for research (e.g., yt-dlp documentation)
-⚠️ **Package downloads**: Ask before suggesting new dependencies
-
----
-
-## 📚 Reference Examples
-
-### Threading Patterns
-**See full examples in `@CODE_EXAMPLES.md`**
-
-Good: Daemon threads with GUI callbacks
-```python
-def download_video(self):
-    thread = threading.Thread(target=self.download_thread, daemon=True)
+def thread_safe_update(self, data):
+    # Offload processing to background
+    thread = threading.Thread(target=lambda: self._worker(data), daemon=True)
     thread.start()
 
-def download_thread(self):
-    # Heavy work here
-    self.after(0, lambda: self.update_progress(100))
+def _worker(self, data):
+    # Process...
+    # Schedule GUI update back on main thread
+    self.after(0, lambda: self.label.config(text="Done!"))
 ```
 
-### VLC Integration
-**See full examples in `@CODE_EXAMPLES.md`**
-
-Good: Polling pattern for position updates
-```python
-def update_seek_slider(self):
-    if self.media_player.is_playing():
-        pos = self.media_player.get_time()
-        self.seek_var.set(pos)
-    self.after(100, self.update_seek_slider)
-```
-
-### File Operations
-**See full examples in `@CODE_EXAMPLES.md`**
-
-Good: Sanitize filenames before saving
-```python
-def sanitize_filename(filename):
-    # Remove illegal characters
-    return re.sub(r'[<>:"/\\|?*]', '_', filename)
-```
-
----
-
-## 🎯 Implementation Priorities
-
-When working on this project, follow this priority order:
-
-### Phase 1: Critical Fixes (Do First)
-1. Fix seek bar control bug → See `@BUGS_AND_SOLUTIONS.md` #1
-2. Add missing attribute initialization → See `@BUGS_AND_SOLUTIONS.md` #2
-3. Implement filename sanitization → See `@BUGS_AND_SOLUTIONS.md` #3
-4. Add resource cleanup on exit → See `@BUGS_AND_SOLUTIONS.md` #4
-
-### Phase 2: Code Quality (Do Second)
-5. Add docstrings to all classes/methods
-6. Add type hints
-7. Extract large methods into smaller functions
-8. Add error handling where missing
-
-### Phase 3: Feature Completion (Do Third)
-9. Complete playlist download UI
-10. Implement all visualizer modes
-11. Add theme picker
-12. Build media library features
-
-### Phase 4: Refactoring (Do Last)
-13. Split into modules (see `@ARCHITECTURE.md`)
-14. Add unit tests
-15. Create proper configuration system
-16. Implement proper logging
-
----
-
-## 🤖 AI Agent Guidelines
-
-### When Fixing Bugs
-1. **Read the bug report** in `@BUGS_AND_SOLUTIONS.md` first
-2. **Explain your understanding** of the root cause
-3. **Show the fix** with before/after code
-4. **Test considerations**: Mention how to verify the fix
-5. **Document the change**: Update relevant sections
-
-### When Adding Features
-1. **Check existing patterns** in `@CODE_EXAMPLES.md`
-2. **Follow threading rules**: Never block main thread
-3. **Match code style**: PEP 8, existing naming conventions
-4. **Add comments**: Explain complex logic
-5. **Consider GUI**: Tkinter-specific patterns
-
-### When Refactoring
-1. **Reference architecture guide**: `@ARCHITECTURE.md`
-2. **Small incremental changes**: Don't rewrite everything
-3. **Maintain functionality**: Keep existing features working
-4. **Test after each change**: Run the application
-5. **Ask before major restructuring**: Get user approval
-
-### Communication Style
-- **Be direct**: Clear explanations without fluff
-- **Show code**: Concrete examples over abstract descriptions
-- **Reference docs**: Point to specific sections in reference files
-- **Explain trade-offs**: When multiple solutions exist
-- **Ask when uncertain**: Don't guess about user preferences
-
----
-
-## 📖 Additional Documentation
-
-- **`@ARCHITECTURE.md`**: Detailed architectural patterns, recommended structure, threading models
-- **`@BUGS_AND_SOLUTIONS.md`**: Complete bug list with root causes and code solutions
-- **`@CODE_EXAMPLES.md`**: Good/bad code patterns, anti-patterns to avoid
-- **`@CODE_REVIEW_NOTES.md`**: Original code review findings and recommendations
-- **`@GEMINI.md`**: Gemini CLI specific instructions (if using Google's Gemini CLI)
-
----
-
-## 🔄 Document Updates
-
-**Last updated**: Based on comprehensive research of 10+ open-source Python video downloader projects and AGENTS.md standards
-
-**Maintenance**: Update this file when:
-- Project structure changes
-- New critical bugs discovered
-- Major features added
-- Dependencies change
-- Best practices evolve
-
----
-
-*This file follows the AGENTS.md standard. Learn more at https://agents.md/*
+### Downloader Pattern
+- Always pass a `progress_callback` to track real-time status.
+- Use `restrictfilenames=True` in `yt-dlp` opts as a secondary safety layer.

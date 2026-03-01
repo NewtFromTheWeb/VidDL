@@ -1,36 +1,63 @@
-# VidDL
-> A video/audio downloader and viewer for the people.
+# VidDL - Advanced Video Downloader & Player
 
-```
+**VidDL** is a powerful desktop media downloader and local player for the people. It focuses on high-quality downloads, universal format compatibility, and a premium neon-themed experience.
 
-VidDL is a desktop application built with Python that allows you to download video and audio from various websites. It features an embedded media player to watch your downloaded content, complete with an audio visualizer for music.
+---
 
-## 🚀 Core Features
+## 🚀 Key Features
 
-- **Modern GUI:** A clean, user-friendly interface built with Tkinter.
-- **Metadata Display:** Fetches and displays the video's thumbnail, title, and duration before you download.
-- **Guaranteed MP4 Output:** All video downloads are automatically converted to the universal MP4 format for maximum compatibility.
-- **MP3 Audio Extraction:** Option to download only the audio from a video and save it as an MP3 file.
-- **Embedded Video Player:** A stable, integrated VLC-based player.
-- **Playback Controls:** Manual seek bar, play/pause, and volume controls.
-- **Audio Visualizer:** A real-time, 2D bar-style visualizer for audio files.
-- **Live Log Viewer:** A toggleable panel for monitoring and debugging.
+- **Multi-Source Downloads**: Supports YouTube (videos/playlists/channels), TikTok, Reddit, and all sites supported by `yt-dlp`.
+- **Metadata Preview**: Fetches thumbnails, titles, and durations before downloading.
+- **Instant Streaming Preview**: Watch a live stream of the video before you decide to download it.
+- **High-Quality Options**: Choose your preferred resolution (1080p, 720p, 480p, etc.) or choose **Best Available**.
+- **MP3 Audio Extraction**: One-click extraction from video to high-quality audio.
+- **Subtitle Support**: Automatically download subtitle files (`.srt`, `.vtt`) when available.
+- **Embedded VLC Player**: A stable, integrated media player with full playback controls.
+- **Premium Themes**: High-contrast neon themes: **Cyberpunk**, **Hacker (Matrix)**, **Vaporwave**, and **Modern Dark**.
+- **Audio Visualizers**: Real-time visualizations (Bar, Spectrum, Oscilloscope, 3D) for music enthusiasts.
+- **Media Library**: Simple built-in browser for your local download folder.
+
+---
 
 ## 🛠️ Requirements
 
-- **Python 3**
-- **yt-dlp:** For downloading.
-- **python-vlc:** For the embedded player.
-- **Pillow:** For image handling.
-- **librosa & numpy:** For the audio visualizer.
-- **ffmpeg:** Required for file conversion. Must be placed in the application's root directory (`ffmpeg.exe`).
-- **VLC Media Player:** Must be installed on the system.
+- **Python 3.x**
+- **VLC Media Player**: Must be installed on your system.
+- **ffmpeg.exe**: Must be placed in the application's root directory (included in most distributions).
+- **Dependencies**: 
+  ```sh
+  pip install -r requirements.txt
+  ```
+
+---
 
 ## 🏃 How to Run
 
-1. Ensure all dependencies listed above are installed.
-2. Place `ffmpeg.exe` in the same folder as the application.
+1. Ensure Python and VLC are installed.
+2. Clone this repository.
 3. Run the application from your terminal:
    ```sh
    python video_downloader_app.py
    ```
+
+---
+
+## 🎨 Themes
+
+VidDL comes with four distinct, polished themes:
+- **Cyberpunk**: A high-energy neon yellow/cyan/pink aesthetic.
+- **Hacker**: A classic Matrix-style green-on-black terminal look.
+- **Vaporwave**: A nostalgic pink and cyan "retrowave" theme.
+- **Modern Dark**: A clean, professional dark mode.
+
+---
+
+## 📂 Downloads & Subtitles
+
+- **Directory Selection**: Use the **Browse** button to choose your save location.
+- **Batch Downloads**: For playlists or channels, use the checkboxes to select only the items you want.
+- **Subtitles**: Toggle the **Subtitles** checkbox to automatically grab available text tracks.
+
+---
+
+*VidDL is designed for personal, educational, and archival use. Please respect copyright and terms of service for all media sources.*

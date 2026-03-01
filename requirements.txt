@@ -1,0 +1,5 @@
+yt-dlp
+python-vlc
+Pillow
+librosa
+numpy
